@@ -403,16 +403,34 @@
             [self.uploadModalDelegate fsUploadProgress:uploadProgress.fractionCompleted addToTotalProgress:NO];
         }
     } completionHandler:^(FSBlob *blob, NSError *error) {
-        [self messageDelegateWithBlob:blob error:error];
-
-        if (blob) {
-            [self messageDelegateLocalUploadFinished];
+        if (self.config.shouldDownload) {
+            [self temporarySave:itemData fileName:blob.fileName completionHandler:^(NSString *fileURL, NSError *error) {
+                blob.internalURL = fileURL;
+                
+                [self messageDelegateWithBlob:blob error:error];
+                
+                if (blob) {
+                    [self messageDelegateLocalUploadFinished];
+                } else {
+                    [self messageDelegateWithBlob:nil error:error];
+                }
+                
+                if (delegateRespondsToUploadProgress) {
+                    [self.uploadModalDelegate fsUploadProgress:1.0 addToTotalProgress:NO];
+                }
+            }];
         } else {
-            [self messageDelegateWithBlob:nil error:error];
-        }
-
-        if (delegateRespondsToUploadProgress) {
-            [self.uploadModalDelegate fsUploadProgress:1.0 addToTotalProgress:NO];
+            [self messageDelegateWithBlob:blob error:error];
+            
+            if (blob) {
+                [self messageDelegateLocalUploadFinished];
+            } else {
+                [self messageDelegateWithBlob:nil error:error];
+            }
+            
+            if (delegateRespondsToUploadProgress) {
+                [self.uploadModalDelegate fsUploadProgress:1.0 addToTotalProgress:NO];
+            }
         }
     }];
 }
@@ -445,13 +463,27 @@
                     currentItemProgress = uploadProgress.fractionCompleted * (1.0 / totalNumberOfItems);
                     [self.uploadModalDelegate fsUploadProgress:progressToAdd addToTotalProgress:YES];
                 }
-            } completionHandler:^(FSBlob *blob, NSError *error) {
-                uploadedItems++;
-
-                [self messageDelegateWithBlob:blob error:error];
-
-                if (uploadedItems == totalNumberOfItems) {
-                    [self messageDelegateLocalUploadFinished];
+            } completionHandler:^(FSBlob *blob, NSData *data, NSError *error) {
+                if (self.config.shouldDownload) {
+                    [self temporarySave:data fileName:blob.fileName completionHandler:^(NSString *fileURL, NSError *error) {
+                        blob.internalURL = fileURL;
+                        
+                        uploadedItems++;
+                        
+                        [self messageDelegateWithBlob:blob error:error];
+                        
+                        if (uploadedItems == totalNumberOfItems) {
+                            [self messageDelegateLocalUploadFinished];
+                        }
+                    }];
+                } else {
+                    uploadedItems++;
+                    
+                    [self messageDelegateWithBlob:blob error:error];
+                    
+                    if (uploadedItems == totalNumberOfItems) {
+                        [self messageDelegateLocalUploadFinished];
+                    }
                 }
             }];
         } else if (item.mediaType == PHAssetMediaTypeVideo) {
@@ -461,13 +493,27 @@
                     currentItemProgress = uploadProgress.fractionCompleted * (1.0 / totalNumberOfItems);
                     [self.uploadModalDelegate fsUploadProgress:progressToAdd addToTotalProgress:YES];
                 }
-            } completionHandler:^(FSBlob *blob, NSError *error) {
-                uploadedItems++;
-
-                [self messageDelegateWithBlob:blob error:error];
-
-                if (uploadedItems == totalNumberOfItems) {
-                    [self messageDelegateLocalUploadFinished];
+            } completionHandler:^(FSBlob *blob, NSData *data, NSError *error) {
+                if (self.config.shouldDownload) {
+                    [self temporarySave:data fileName:blob.fileName completionHandler:^(NSString *fileURL, NSError *error) {
+                        blob.internalURL = fileURL;
+                        
+                        uploadedItems++;
+                        
+                        [self messageDelegateWithBlob:blob error:error];
+                        
+                        if (uploadedItems == totalNumberOfItems) {
+                            [self messageDelegateLocalUploadFinished];
+                        }
+                    }];
+                } else {
+                    uploadedItems++;
+                    
+                    [self messageDelegateWithBlob:blob error:error];
+                    
+                    if (uploadedItems == totalNumberOfItems) {
+                        [self messageDelegateLocalUploadFinished];
+                    }
                 }
             }];
         }
@@ -496,7 +542,7 @@
                usingFilestack:(Filestack *)filestack
                  storeOptions:(FSStoreOptions *)storeOptions
                      progress:(void (^)(NSProgress *uploadProgress))progress
-            completionHandler:(void (^)(FSBlob *blob, NSError *error))completionHandler {
+            completionHandler:(void (^)(FSBlob *blob, NSData *data, NSError *error))completionHandler {
 
     [[PHImageManager defaultManager] requestImageDataForAsset:asset options:nil resultHandler:^(NSData * imageData, NSString * dataUTI, UIImageOrientation orientation, NSDictionary * info) {
         NSURL *imageURL = info[@"PHImageFileURLKey"];
@@ -506,7 +552,7 @@
         [filestack store:imageData withOptions:storeOptions progress:^(NSProgress *uploadProgress) {
             progress(uploadProgress);
         } completionHandler:^(FSBlob *blob, NSError *error) {
-            completionHandler(blob, error);
+            completionHandler(blob, imageData, error);
         }];
     }];
 }
@@ -515,7 +561,7 @@
                usingFilestack:(Filestack *)filestack
                  storeOptions:(FSStoreOptions *)storeOptions
                      progress:(void (^)(NSProgress *uploadProgress))progress
-            completionHandler:(void (^)(FSBlob *blob, NSError *error))completionHandler {
+            completionHandler:(void (^)(FSBlob *blob, NSData *data, NSError *error))completionHandler {
 
     PHVideoRequestOptions *options=[[PHVideoRequestOptions alloc] init];
     options.version = PHVideoRequestOptionsVersionOriginal;
@@ -530,7 +576,7 @@
             [filestack store:data withOptions:storeOptions progress:^(NSProgress *uploadProgress) {
                 progress(uploadProgress);
             } completionHandler:^(FSBlob *blob, NSError *error) {
-                completionHandler(blob, error);
+                completionHandler(blob, data, error);
             }];
         }
     }];
@@ -572,6 +618,17 @@
             [self.pickerDelegate fsUploadError:error];
         }
     }
+}
+
+- (void)temporarySave:(NSData *)data fileName:(NSString *)fileName completionHandler:(void (^)(NSString *fileURL, NSError *error))completionHandler {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSString *uuidFileName = [NSString stringWithFormat:@"%@_%@", [[NSUUID UUID] UUIDString], fileName];
+        NSURL *tmpDirURL = [NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES];
+        NSURL *fileURL = [tmpDirURL URLByAppendingPathComponent:uuidFileName];
+        [data writeToFile:[fileURL path] atomically:YES];
+        
+        completionHandler([fileURL path], nil);
+    });
 }
 
 @end
