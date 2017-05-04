@@ -89,7 +89,7 @@
     }
 
     PHAssetCollection *collection = self.albums[indexPath.row];
-    PHFetchResult *assetsFetchResult = [PHAsset fetchAssetsInAssetCollection:collection options:nil];
+    PHFetchResult *assetsFetchResult = [PHAsset fetchAssetsInAssetCollection:collection options:[self assetsFetchOptions]];
     NSUInteger collectionTotalCount = assetsFetchResult.count;
 
     if (collectionTotalCount > 0) {
@@ -153,6 +153,7 @@
     NSString *predicateFormat = [predicateComponents componentsJoinedByString:@" || "];
     PHFetchOptions *fetchOptions = [[PHFetchOptions alloc] init];
     fetchOptions.predicate = [NSPredicate predicateWithFormat:predicateFormat argumentArray:arguments];
+    fetchOptions.sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:@"creationDate" ascending:false]];
 
     return fetchOptions;
 }
