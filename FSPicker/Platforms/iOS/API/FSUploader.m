@@ -543,12 +543,25 @@
                  storeOptions:(FSStoreOptions *)storeOptions
                      progress:(void (^)(NSProgress *uploadProgress))progress
             completionHandler:(void (^)(FSBlob *blob, NSData *data, NSError *error))completionHandler {
+    PHImageRequestOptions *options = [PHImageRequestOptions new];
+    options.deliveryMode = PHImageRequestOptionsDeliveryModeHighQualityFormat;
+    options.networkAccessAllowed = YES;
+    options.synchronous = NO;
+    options.progressHandler = ^(double progressValue, NSError * _Nullable error, BOOL * _Nonnull stop, NSDictionary * _Nullable info) {
+        NSProgress *progressObject = [NSProgress new];
+        progressObject.totalUnitCount = 100;
+        progressObject.completedUnitCount = (progressValue / 2) * 100;
+        progress(progressObject);
+    };
 
-    [[PHImageManager defaultManager] requestImageDataForAsset:asset options:nil resultHandler:^(NSData * imageData, NSString * dataUTI, UIImageOrientation orientation, NSDictionary * info) {
+    [[PHImageManager defaultManager] requestImageDataForAsset:asset options:options resultHandler:^(NSData * imageData, NSString * dataUTI, UIImageOrientation orientation, NSDictionary * info) {
+        if (!imageData) {
+            return;
+        }
+
         NSURL *imageURL = info[@"PHImageFileURLKey"];
         NSString *fileName = imageURL.lastPathComponent;
         storeOptions.fileName = fileName;
-
         [filestack store:imageData withOptions:storeOptions progress:^(NSProgress *uploadProgress) {
             progress(uploadProgress);
         } completionHandler:^(FSBlob *blob, NSError *error) {
