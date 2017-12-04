@@ -558,9 +558,11 @@
         if (!imageData) {
             return;
         }
-
+        
+        UIImage *image = [UIImage imageWithData:imageData];
+        imageData = UIImageJPEGRepresentation(image, 0.95);
         NSURL *imageURL = info[@"PHImageFileURLKey"];
-        NSString *fileName = imageURL.lastPathComponent;
+        NSString *fileName = [imageURL.lastPathComponent stringByReplacingOccurrencesOfString:@".HEIC" withString:@".jpg"];
         storeOptions.fileName = fileName;
         [filestack store:imageData withOptions:storeOptions progress:^(NSProgress *uploadProgress) {
             progress(uploadProgress);

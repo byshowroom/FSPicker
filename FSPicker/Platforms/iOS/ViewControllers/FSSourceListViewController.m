@@ -212,6 +212,10 @@
         pickerController.cameraDevice = UIImagePickerControllerCameraDeviceFront;
     }
 
+    if (@available(iOS 11.0, *)) {
+        pickerController.imageExportPreset = UIImagePickerControllerImageURLExportPresetCompatible;
+    }
+
     dispatch_async(dispatch_get_main_queue(), ^{
         [self presentViewController:pickerController animated:YES completion:nil];
     });
